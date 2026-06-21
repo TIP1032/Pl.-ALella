@@ -140,6 +140,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 /* ── Escut policial ─────────────────────────────── */
 #escut{height:52px;width:auto;flex-shrink:0;filter:drop-shadow(0 1px 3px rgba(0,0,0,.4));margin-right:4px}
+
+/* ── Motius ─────────────────────────────────────────── */
+#mot-view{display:none;padding:10px 12px 40px}
+.pill.mot-active{background:#4a6741;border-color:#4a6741;color:#fff}
+.mot-card{background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:7px;display:flex;align-items:center;gap:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06);transition:box-shadow .15s}
+.mot-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.mot-code{font-size:20px;font-weight:800;color:#fff;background:#4a6741;border-radius:8px;min-width:38px;height:38px;display:flex;align-items:center;justify-content:center;flex-shrink:0;letter-spacing:-.5px}
+.mot-desc{font-size:13px;color:var(--text);line-height:1.4;flex:1}
 </style>
 </head>
 <body>
@@ -173,6 +181,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
     <button class="pill" data-norm="ALC">Alcohol</button>
     <button class="pill" data-norm="SCT">SCT</button>
     <button class="pill" data-norm="CIV">Civisme</button>
+    <button class="pill" data-norm="MOT">Motius</button>
     <span id="count-label"></span>
   </div>
 </div>
@@ -180,6 +189,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div id="sct-view"></div>
 <div id="civ-view"></div>
 <div id="fav-view"></div>
+<div id="mot-view"></div>
 <div id="empty"><div class="ico">&#128269;</div>Cap infracci&oacute; trobada<div class="hint">Prova amb menys paraules o paraules m&eacute;s curtes</div></div>
 <script>
 var NORMS={RGC:"Reglament General de Circulació",LSV:"Llei de Seguretat Viària",OM:"Ordenança Municipal",SCT:"Servei Català de Trànsit"};
@@ -578,6 +588,8 @@ function render(){
   list.style.display="none";sv.style.display="none";civv.style.display="none";favv.style.display="none";
   document.getElementById("empty").style.display="none";
 
+  var motv=document.getElementById("mot-view");motv.style.display="none";
+  if(normFilter==="MOT"){motv.style.display="block";renderMOT(words);return;}
   if(normFilter==="FAV"){
     favv.style.display="block";
     renderFav(words);
@@ -618,6 +630,8 @@ function toggleFav(seq,e){
   document.querySelectorAll('.fav-btn[data-fseq="'+seq+'"]').forEach(function(b){
     b.classList.toggle('active',!!favs[seq]);
   });
+  var motv=document.getElementById("mot-view");motv.style.display="none";
+  if(normFilter==="MOT"){motv.style.display="block";renderMOT(words);return;}
   if(normFilter==="FAV"){
     var raw=document.getElementById("q").value.trim().toLowerCase();
     var words=raw.split(/\s+/).filter(function(w){return w.length>0;});
@@ -654,6 +668,108 @@ function renderFav(words){
   });
 }
 
+
+/* ── Motius de notificació ───────────────────────────── */
+var MOTIUS_NUMERICS=[
+  {c:"1", d:"Lliurada còpia en l'acte al denunciat."},
+  {c:"2", d:"Denúncia d'un particular."},
+  {c:"3", d:"Prestar l'agent servei en bicicleta."},
+  {c:"4", d:"Denúncia comunicada verbalment."},
+  {c:"5", d:"No disposar de mitjans per perseguir el vehicle."},
+  {c:"6", d:"Infracció detectada durant investigació d'accident."}
+];
+var MOTIUS_ALFABETICS=[
+  {c:"A", d:"Estar absent el conductor del vehicle."},
+  {c:"B", d:"Prestar l'agent servei a peu."},
+  {c:"C", d:"Prestar servei de protecció escolar."},
+  {c:"D", d:"Prestar servei en accident de trànsit."},
+  {c:"E", d:"L'excés de velocitat del denunciat ho impedeix."},
+  {c:"F", d:"No atendre requeriment de l'agent."},
+  {c:"G", d:"Les característiques de la via ho impedeixen."},
+  {c:"H", d:"La seguretat de tercers impedeix el seguiment."},
+  {c:"I", d:"Trobar-se a una distància que ho impedeix."},
+  {c:"J", d:"Vehicle infractor en servei d'urgència."},
+  {c:"K", d:"Prestar l'agent servei a cavall."},
+  {c:"L", d:"Col·laborar l'agent en el trasllat d'un ferit."},
+  {c:"M", d:"Prestar l'agent servei amb grua."},
+  {c:"O", d:"Circular en sentit contrari."},
+  {c:"P", d:"Resultar lesionat l'infractor en l'accident."},
+  {c:"Q", d:"Obres a la via."},
+  {c:"R", d:"Notificació refusada."},
+  {c:"S", d:"Signada."},
+  {c:"T", d:"Denúncia del fet per sistema de captació d'imatges."},
+  {c:"U", d:"Servei preferent de regulació de trànsit."},
+  {c:"V", d:"Desobeir la indicació d'aturar-se de l'agent."},
+  {c:"W", d:"No dificultar la fluïdesa del trànsit."},
+  {c:"X", d:"Gran intensitat de circulació."},
+  {c:"Y", d:"Donar-se a la fuga el conductor del vehicle."},
+  {c:"Z", d:"Factors meteorològics adversos."},
+  {c:"Ç", d:"Vehicle policial en servei d'urgència."}
+];
+
+var openMotGroups={num:true, alf:true};
+
+function hiMotWords(text, words){
+  if(!words.length) return esc(text);
+  return hiWords(text, words);
+}
+
+function renderMOT(words){
+  var mv=document.getElementById("mot-view");
+
+  function filterMot(arr){
+    if(!words.length) return arr;
+    return arr.filter(function(m){
+      return (m.c+' '+m.d).toLowerCase().split('').join('').indexOf(
+        words.join(' ')
+      ) !== -1 || words.every(function(w){
+        return (m.c+' '+m.d).toLowerCase().indexOf(w) !== -1;
+      });
+    });
+  }
+
+  var num = filterMot(MOTIUS_NUMERICS);
+  var alf = filterMot(MOTIUS_ALFABETICS);
+  var total = num.length + alf.length;
+  document.getElementById("count-label").textContent = total + " motius";
+
+  function renderGroup(items, key, label, color){
+    if(items.length===0) return '';
+    var isOpen = openMotGroups[key];
+    var html2 = '<div class="acc-block'+(isOpen?" open":"")+'" data-mgkey="'+key+'">'
+      +'<div class="acc-header" style="background:linear-gradient(90deg,'+color+','+color+'cc)">'
+      +'<span class="acc-icon">'+(key==="num"?"🔢":"🔤")+'</span>'
+      +'<div class="acc-texts"><div class="acc-title">'+label+'</div></div>'
+      +'<span class="acc-cnt">'+items.length+'</span>'
+      +'<span class="acc-chev">▼</span>'
+      +'</div>'
+      +'<div class="acc-body">';
+    items.forEach(function(m){
+      html2 += '<div class="mot-card">'
+        +'<div class="mot-code">'+m.c+'</div>'
+        +'<div class="mot-desc">'+hiWords(m.d, words)+'</div>'
+        +'</div>';
+    });
+    html2 += '</div></div>';
+    return html2;
+  }
+
+  var out = renderGroup(num, "num", "Motius numèrics (1–6) · Per què no s'entrega còpia", "#4a6741")
+           + renderGroup(alf, "alf", "Motius alfabètics (A–Ç) · Per què no s'identifica l'infractor", "#2a6b5c");
+
+  mv.innerHTML = out || '<div class="fav-empty"><div class="ico">🔍</div>Cap motiu trobat.</div>';
+
+  mv.querySelectorAll(".acc-header").forEach(function(h){
+    h.addEventListener("click", function(e){
+      e.stopPropagation();
+      var key = this.parentElement.dataset.mgkey;
+      openMotGroups[key] = !openMotGroups[key];
+      var raw=document.getElementById("q").value.trim().toLowerCase();
+      renderMOT(raw.split(/\s+/).filter(function(w){return w.length>0;}));
+    });
+  });
+}
+
 function applyPills(){
   document.querySelectorAll(".pill").forEach(function(p){
     var n=p.dataset.norm;p.className="pill";
@@ -665,6 +781,7 @@ function applyPills(){
       else if(n==="ALC")p.classList.add("alc-active");
       else if(n==="SCT")p.classList.add("sct-active");
       else if(n==="CIV")p.classList.add("civ-active");
+      else if(n==="MOT")p.classList.add("mot-active");
     }
   });
 }
